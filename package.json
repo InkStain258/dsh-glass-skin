@@ -1,0 +1,56 @@
+{
+  "name": "dsh-glass-skin",
+  "version": "1.0.0",
+  "description": "Acrylic / frosted-glass appearance for DeepSeek Harness: translucent UI over the native Windows window material, layered on top of any active theme.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "dsh-glass-skin": "scripts/install.mjs"
+  },
+  "files": [
+    "plugin/index.js",
+    "plugin/client.js",
+    "plugin/cordis.patch.yml",
+    "plugin/package.json",
+    "plugin/locale/*.json",
+    "plugin/icon.svg",
+    "tools/dsh-glass-desktop.mjs",
+    "scripts/install.mjs",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "install-glass": "node scripts/install.mjs",
+    "uninstall": "node scripts/install.mjs --uninstall",
+    "dry-run": "node scripts/install.mjs --dry-run",
+    "test": "node tools/glass-client-contract.test.mjs && node tools/glass-row-render.test.mjs && node tools/glass-render.test.mjs"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "theme",
+    "glass",
+    "acrylic",
+    "mica",
+    "frosted-glass",
+    "windows"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "win32",
+    "darwin",
+    "linux"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/InkStain258/dsh-glass-skin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/InkStain258/dsh-glass-skin/issues"
+  },
+  "homepage": "https://github.com/InkStain258/dsh-glass-skin#readme"
+}

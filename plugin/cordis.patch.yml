@@ -1,0 +1,12 @@
+# dsh-glass-skin bundle layer.
+#
+# The row id is what a user overrides in the profile's cordis.patch.yml; the
+# row name is the module this package exports, so it must stay the package
+# name. Keep them different so the plugin card does not print the same string
+# twice.
+#
+# The whole appearance lives in the Client half (client.js): a theme token
+# overlay plus scoped CSS. This Host half only makes the package mountable.
+- insert:
+    - id: glass-skin
+      name: 'dsh-glass-skin'
