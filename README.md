@@ -70,6 +70,28 @@ To restore the window exactly as it shipped, `--uninstall` puts back the byte-ex
 
 ---
 
+## After a DSH update
+
+**A DSH update silently removes the window patch.** The updater replaces `resources/app.asar` wholesale, so the patched `lib/main.js` is gone — but the Client plugin in your profile is untouched. The result is a confusing half-state: surfaces stay translucent, yet the desktop no longer shows through, because nothing is asking the OS for acrylic any more.
+
+When that happens, re-apply the patch:
+
+```bash
+npx github:InkStain258/dsh-glass-skin repair
+```
+
+It checks whether the archive still carries the patch and does nothing if it does, so it is safe to run any time — after every update, or habitually. If the app is open it stops and tells you to quit first, rather than failing halfway through a 180 MB write.
+
+You can also leave it running yourself; the check is a streaming scan of the archive and takes well under a second:
+
+```bash
+node tools/repair.mjs --build   # exit code 0 = patched, 1 = needs attention
+```
+
+> The backup and sidecar from the previous install belong to the *old* build, so `repair` archives them under a `.stale-<sha>` name before taking a fresh one. It never restores bytes from a different release.
+
+---
+
 ## Editing the look
 
 Every surface value lives in one array at the top of `plugin/client.js`:
