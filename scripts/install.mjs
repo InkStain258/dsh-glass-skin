@@ -23,6 +23,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO = path.resolve(HERE, '..')
 const PLUGIN_DIR = path.join(REPO, 'plugin')
 const PATCHER = path.join(REPO, 'tools', 'dsh-glass-desktop.mjs')
+const REPAIR = path.join(REPO, 'tools', 'repair.mjs')
 
 /* ------------------------------------------------------------------ */
 /* tiny console                                                       */
@@ -53,6 +54,7 @@ ${c.bold('dsh-glass-skin')} — acrylic / glass appearance for DeepSeek Harness
 
 ${c.bold('Usage')}
   node scripts/install.mjs [options]
+  node scripts/install.mjs repair      re-apply the window patch after a DSH update
 
 ${c.bold('Options')}
   --no-patch        install the plugin only (surface translucency, no desktop show-through)
@@ -252,9 +254,23 @@ function runPatcher(action, asar, extra = []) {
 /* ------------------------------------------------------------------ */
 
 function main() {
+  // `repair` is a subcommand rather than a flag: a DSH update replaces
+  // app.asar and silently drops the window patch while the Client plugin
+  // survives. Handling it here keeps ONE bin entry, so `npx <repo>` stays
+  // unambiguous — a second bin would make npx ask which command to run.
+  const argv = process.argv.slice(2)
+  if (argv[0] === 'repair') {
+    const result = spawnSync(process.execPath, [REPAIR, ...argv.slice(1)], {
+      stdio: 'inherit',
+      env: process.env,
+    })
+    process.exitCode = result.status ?? 1
+    return
+  }
+
   let args
   try {
-    args = parseArgs(process.argv.slice(2))
+    args = parseArgs(argv)
   } catch (error) {
     fail(error.message)
     say(USAGE)
