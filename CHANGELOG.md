@@ -1,8 +1,35 @@
 # Changelog
 
-Notable changes, newest first. Versions follow semver; the plugin manifest
-(`plugin/package.json`) and this package version independently, because the
-installer and the Client plugin ship separately.
+Notable changes, newest first. Versions follow semver.
+
+## 1.2.0
+
+Makes the repository root a real DSH bundle, so `github:InkStain258/dsh-glass-skin`
+installs a mountable plugin instead of an installer-only wrapper.
+
+### Added
+
+- `main` and `exports` on the root package, pointing at `plugin/index.js`. The
+  Loader resolves the patch row named `dsh-glass-skin` to the package entry, so a
+  package without `main` mounts nothing.
+- `dsh.bundle.patch` and `dsh.client` on the root package. Previously only
+  `plugin/package.json` declared them, which meant a plain `github:` spec —
+  resolving to the repository root — produced "listed in the bundle layer but
+  declares no dsh metadata" and failed to load at startup.
+
+### Changed
+
+- `plugin/package.json` is no longer shipped in the npm package. The root
+  manifest is now the only one, matching how every other DSH bundle is laid out
+  (none of them ships a nested manifest). The file stays in the repository for
+  anyone installing the subpackage directly.
+
+### Notes
+
+- The root package is now two things at once: the `npx` installer (`bin`) and the
+  bundle itself. That is the cost of supporting a bare `github:` spec. The
+  alternative was requiring consumers to target `/tree/main/plugin`, which pnpm
+  does not support consistently across versions.
 
 ## 1.1.1
 
@@ -44,5 +71,5 @@ the plugin.
 
 ## 1.0.0
 
-- First release: native acrylic window material plus glass token overlay that
+- First release: native acrylic window material plus a glass token overlay that
   stacks on the active theme.

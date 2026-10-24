@@ -1,9 +1,17 @@
 {
   "name": "dsh-glass-skin",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Acrylic / frosted-glass appearance for DeepSeek Harness: translucent UI over the native Windows window material, layered on top of any active theme.",
   "license": "MIT",
   "type": "module",
+  "main": "./plugin/index.js",
+  "exports": {
+    ".": "./plugin/index.js",
+    "./client": "./plugin/client.js",
+    "./locale/*.json": "./plugin/locale/*.json",
+    "./icon": "./plugin/icon.svg",
+    "./package.json": "./package.json"
+  },
   "bin": {
     "dsh-glass-skin": "scripts/install.mjs"
   },
@@ -11,7 +19,6 @@
     "plugin/index.js",
     "plugin/client.js",
     "plugin/cordis.patch.yml",
-    "plugin/package.json",
     "plugin/locale/*.json",
     "plugin/icon.svg",
     "tools/dsh-glass-desktop.mjs",
@@ -28,6 +35,19 @@
     "dry-run": "node scripts/install.mjs --dry-run",
     "test": "node tools/glass-client-contract.test.mjs && node tools/glass-row-render.test.mjs && node tools/glass-render.test.mjs",
     "repair": "node tools/repair.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./plugin/cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-theme",
+        "@deepseek-ai/dsh-client-ui-settings-general"
+      ]
+    }
   },
   "keywords": [
     "deepseek-harness",
