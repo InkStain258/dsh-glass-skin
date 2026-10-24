@@ -210,9 +210,13 @@ const PLUGIN_NAME = 'dsh-glass-skin'
 function resolveDshCli() {
   const fromEnv = process.env.DSH_CLI
   if (typeof fromEnv === 'string' && fromEnv.trim() !== '' && fs.existsSync(fromEnv)) return fromEnv
-  // A packaged Desktop runtime ships the CLI beside the runtime root.
+  // A packaged Desktop runtime ships the CLI beside the runtime root. Look for
+  // both shapes: a plain JS entry, and the Windows .cmd shim that wraps it.
+  const runtimeBin = path.join(process.env.LOCALAPPDATA ?? '', 'DeepSeek Harness', 'resources', 'runtime', 'cli', 'bin')
   const guesses = [
-    path.join(process.env.LOCALAPPDATA ?? '', 'DeepSeek Harness', 'resources', 'runtime', 'cli', 'bin', 'dsh.js'),
+    path.join(runtimeBin, 'dsh.js'),
+    path.join(runtimeBin, 'dsh.cmd'),
+    path.join(runtimeBin, 'dsh'),
   ]
   for (const guess of guesses) if (guess !== '' && fs.existsSync(guess)) return guess
   const probe = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['dsh'], { encoding: 'utf8' })
@@ -223,13 +227,40 @@ function resolveDshCli() {
   return undefined
 }
 
+/**
+ * Run the dsh CLI with the given arguments.
+ *
+ * The two CLI shapes are not interchangeable. A `.cmd`/`.bat` shim is a *shell*
+ * script: handing it to `process.execPath` makes node parse batch syntax as
+ * JavaScript, and `@echo off` throws "Invalid or unexpected token". A `.js`
+ * entry, by contrast, must go through node.
+ *
+ * For the shim we go through `cmd /c` explicitly rather than passing
+ * `shell: true`: Node deprecates that combination (DEP0190) because it
+ * concatenates arguments without escaping them. Going through cmd directly
+ * keeps the shim working while every argument stays a separate, already-quoted
+ * element.
+ */
+function runDshCli(cli, args) {
+  const isShellScript = /\.(cmd|bat)$/iu.test(cli)
+  if (!isShellScript) {
+    return spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env: process.env })
+  }
+  const result =
+    process.platform === 'win32'
+      ? spawnSync('cmd.exe', ['/d', '/s', '/c', cli, ...args], {
+          encoding: 'utf8',
+          env: process.env,
+          windowsVerbatimArguments: false,
+        })
+      : spawnSync(cli, args, { encoding: 'utf8', env: process.env })
+  return result
+}
+
 function runPluginInstall() {
   const cli = resolveDshCli()
   if (cli === undefined) return { installed: false, reason: 'dsh-cli-missing' }
-  const result = spawnSync(process.execPath, [cli, 'plugin', '--profile', profileName(), 'add', PLUGIN_DIR], {
-    encoding: 'utf8',
-    env: process.env,
-  })
+  const result = runDshCli(cli, ['plugin', '--profile', profileName(), 'add', PLUGIN_DIR])
   return {
     installed: result.status === 0,
     reason: result.status === 0 ? undefined : (result.stderr || result.stdout || 'unknown failure').trim(),
@@ -337,10 +368,7 @@ function main() {
     let removed = false
     head('remove plugin')
     if (cli !== undefined) {
-      const rm = spawnSync(process.execPath, [cli, 'plugin', '--profile', profileName(), 'remove', PLUGIN_NAME], {
-        encoding: 'utf8',
-        env: process.env,
-      })
+      const rm = runDshCli(cli, ['plugin', '--profile', profileName(), 'remove', PLUGIN_NAME])
       if (rm.status === 0) {
         ok('plugin removed from the profile')
         removed = true
