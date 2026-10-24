@@ -1,6 +1,6 @@
 {
   "name": "dsh-glass-skin",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Acrylic / frosted-glass appearance for DeepSeek Harness: translucent UI over the native Windows window material, layered on top of any active theme.",
   "license": "MIT",
   "type": "module",
@@ -19,6 +19,7 @@
     "scripts/install.mjs",
     "README.md",
     "README.zh.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
