@@ -24,6 +24,8 @@ const REPO = path.resolve(HERE, '..')
 const PLUGIN_DIR = path.join(REPO, 'plugin')
 const PATCHER = path.join(REPO, 'tools', 'dsh-glass-desktop.mjs')
 const REPAIR = path.join(REPO, 'tools', 'repair.mjs')
+const DOCTOR = path.join(REPO, 'tools', 'doctor.mjs')
+const LAUNCH = path.join(REPO, 'tools', 'launch.mjs')
 
 /* ------------------------------------------------------------------ */
 /* tiny console                                                       */
@@ -290,8 +292,12 @@ function main() {
   // survives. Handling it here keeps ONE bin entry, so `npx <repo>` stays
   // unambiguous — a second bin would make npx ask which command to run.
   const argv = process.argv.slice(2)
-  if (argv[0] === 'repair') {
-    const result = spawnSync(process.execPath, [REPAIR, ...argv.slice(1)], {
+  // Subcommands, not flags: one bin entry keeps 'npx <repo>' unambiguous — a
+  // second bin makes npx ask which command to run.
+  const SUBCOMMANDS = { repair: REPAIR, doctor: DOCTOR, launch: LAUNCH }
+  const sub = SUBCOMMANDS[argv[0]]
+  if (sub !== undefined) {
+    const result = spawnSync(process.execPath, [sub, ...argv.slice(1)], {
       stdio: 'inherit',
       env: process.env,
     })

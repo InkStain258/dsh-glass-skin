@@ -1,6 +1,6 @@
 {
   "name": "dsh-glass-skin",
-  "version": "1.2.0",
+  "version": "1.4.0",
   "description": "Acrylic / frosted-glass appearance for DeepSeek Harness: translucent UI over the native Windows window material, layered on top of any active theme.",
   "license": "MIT",
   "type": "module",
@@ -17,12 +17,15 @@
   },
   "files": [
     "plugin/index.js",
+    "plugin/fs-raw.js",
     "plugin/client.js",
     "plugin/cordis.patch.yml",
     "plugin/locale/*.json",
     "plugin/icon.svg",
     "tools/dsh-glass-desktop.mjs",
     "tools/repair.mjs",
+    "tools/doctor.mjs",
+    "tools/launch.mjs",
     "scripts/install.mjs",
     "README.md",
     "README.zh.md",
@@ -34,7 +37,9 @@
     "uninstall": "node scripts/install.mjs --uninstall",
     "dry-run": "node scripts/install.mjs --dry-run",
     "test": "node tools/glass-client-contract.test.mjs && node tools/glass-row-render.test.mjs && node tools/glass-render.test.mjs",
-    "repair": "node tools/repair.mjs"
+    "repair": "node tools/repair.mjs",
+    "doctor": "node tools/doctor.mjs",
+    "launch": "node tools/launch.mjs"
   },
   "dsh": {
     "bundle": {

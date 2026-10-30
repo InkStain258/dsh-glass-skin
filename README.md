@@ -74,19 +74,50 @@ To restore the window exactly as it shipped, `--uninstall` puts back the byte-ex
 
 **A DSH update silently removes the window patch.** The updater replaces `resources/app.asar` wholesale, so the patched `lib/main.js` is gone — but the Client plugin in your profile is untouched. The result is a confusing half-state: surfaces stay translucent, yet the desktop no longer shows through, because nothing is asking the OS for acrylic any more.
 
-When that happens, re-apply the patch:
+The fix is to start the app through the launcher, which patches first and then launches:
+
+```bash
+npx github:InkStain258/dsh-glass-skin launch --install
+```
+
+That writes a **DeepSeek Harness (Glass)** shortcut to your Desktop. From then on, start the app with that shortcut instead of the normal icon: it applies the patch while the app is closed, then starts it.
+
+> **Why a launcher instead of a background repair.** The window material can only be set by patching `app.asar`, and the archive is locked while the app runs. A helper started by the app to wait for the exit does not work: it is a child of the app, so quitting takes it down before it can do anything — observed directly, the waiter logged `start` and never reached `archive released`. That is also why "quit and wait a few seconds" has no correct answer. A launcher removes the waiting instead of guessing at it.
+
+### Or repair it now
 
 ```bash
 npx github:InkStain258/dsh-glass-skin repair
 ```
 
-It checks whether the archive still carries the patch and does nothing if it does, so it is safe to run any time — after every update, or habitually. If the app is open it stops and tells you to quit first, rather than failing halfway through a 180 MB write.
+Checks whether the archive still carries the patch and does nothing if it does, so it is safe to run any time. If the app is open it stops and tells you to quit, rather than failing halfway through a 180 MB write.
 
-You can also leave it running yourself; the check is a streaming scan of the archive and takes well under a second:
+### When in doubt, ask the doctor
 
 ```bash
-node tools/repair.mjs --build   # exit code 0 = patched, 1 = needs attention
+npx github:InkStain258/dsh-glass-skin doctor
 ```
+
+The two halves fail differently and need different fixes, so the report keeps them apart:
+
+```
+window patch
+  archive  …\resources\app.asar
+  dsh      0.2.1-rc.5
+  patch    missing
+
+client plugin
+  profile  …\.dsh\profiles\desktop
+  installed yes (v1.4.0)
+  declared  yes
+  bundled   yes
+  dsh meta  present
+
+launcher
+  desktop shortcut installed
+```
+
+Add `--json` for scripting, or `--fix` to apply the patch when the app is closed.
 
 > The backup and sidecar from the previous install belong to the *old* build, so `repair` archives them under a `.stale-<sha>` name before taking a fresh one. It never restores bytes from a different release.
 
