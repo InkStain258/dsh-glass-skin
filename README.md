@@ -5,10 +5,15 @@ Acrylic / frosted-glass appearance for [DeepSeek Harness](https://github.com/dee
 ![DeepSeek Harness with glass surfaces over a desktop wallpaper](assets/screenshot.png)
 
 ```bash
-npx github:InkStain258/dsh-glass-skin
+npx --allow-git=all github:InkStain258/dsh-glass-skin
 ```
 
 One command. It installs the plugin *and* patches the window material.
+
+> **npm 12 and newer refuse git dependencies by default.** `npx` fails with
+> `EALLOWGIT: Fetching packages of type "git" have been disabled` unless the flag
+> above is passed. On older npm the flag is unnecessary and harmless.
+
 
 > **Windows 11** is the fully supported platform (native acrylic). On macOS the plugin half works and uses the vibrancy the app already has. On Linux the window patch is skipped.
 
@@ -31,7 +36,7 @@ Works **together with existing theme plugins**. It does not replace your theme; 
 ### The one-liner
 
 ```bash
-npx github:InkStain258/dsh-glass-skin
+npx --allow-git=all github:InkStain258/dsh-glass-skin
 ```
 
 Or from a clone:
@@ -61,7 +66,7 @@ node scripts/install.mjs --uninstall    # undo everything
 ## Uninstall
 
 ```bash
-npx github:InkStain258/dsh-glass-skin --uninstall
+npx --allow-git=all github:InkStain258/dsh-glass-skin --uninstall
 ```
 
 Or just turn it off: **Settings → General → Glass skin**. That restores your surfaces immediately and leaves the window patch in place (the window stays blurred acrylic).
@@ -77,7 +82,7 @@ To restore the window exactly as it shipped, `--uninstall` puts back the byte-ex
 The fix is to start the app through the launcher, which patches first and then launches:
 
 ```bash
-npx github:InkStain258/dsh-glass-skin launch --install
+npx --allow-git=all github:InkStain258/dsh-glass-skin launch --install
 ```
 
 That writes a **DeepSeek Harness (Glass)** shortcut to your Desktop. From then on, start the app with that shortcut instead of the normal icon: it applies the patch while the app is closed, then starts it.
@@ -87,7 +92,7 @@ That writes a **DeepSeek Harness (Glass)** shortcut to your Desktop. From then o
 ### Or repair it now
 
 ```bash
-npx github:InkStain258/dsh-glass-skin repair
+npx --allow-git=all github:InkStain258/dsh-glass-skin repair
 ```
 
 Checks whether the archive still carries the patch and does nothing if it does, so it is safe to run any time. If the app is open it stops and tells you to quit, rather than failing halfway through a 180 MB write.
@@ -95,7 +100,7 @@ Checks whether the archive still carries the patch and does nothing if it does, 
 ### When in doubt, ask the doctor
 
 ```bash
-npx github:InkStain258/dsh-glass-skin doctor
+npx --allow-git=all github:InkStain258/dsh-glass-skin doctor
 ```
 
 The two halves fail differently and need different fixes, so the report keeps them apart:
