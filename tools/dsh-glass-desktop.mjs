@@ -100,6 +100,30 @@ const ANCHOR = [
 /** Options go immediately after the win32 branch closes. */
 const ANCHOR_INSERT_AFTER = '\t\t} : {},';
 
+/**
+ * Runtime overrides that repaint the window opaque, neutralised in place.
+ *
+ * These are the calls that actually decide the window colour on Windows: the
+ * constructor options are only the initial value.
+ *
+ *   - `updateBackground` runs on every `nativeTheme` "updated" event.
+ *   - `enterWorkspace` runs once after the main window finishes navigating.
+ *
+ * Both call `setBackgroundColor(chromeFallbackFill())`, an opaque `#1b1b1c` /
+ * `#f9fafb`. Each site appears exactly once, so they are matched in full rather
+ * than by the shared call shape. The replacement is the same length (the literal
+ * plus padding inside the parentheses), which keeps the archive offsets intact
+ * without any compensation edit.
+ */
+const RUNTIME_SITES = [
+  'if (!window.isDestroyed()) window.setBackgroundColor(chromeFallbackFill());',
+  'if (process.platform === "win32") window.setBackgroundColor(chromeFallbackFill());',
+];
+const RUNTIME_FROM = 'chromeFallbackFill()';
+const RUNTIME_TO = '\"#00000000\"' + ' '.repeat(RUNTIME_FROM.length - '\"#00000000\"'.length);
+/** Rewrite one runtime site to the transparent colour (same byte length). */
+const neutralizeRuntime = (site) => site.split(RUNTIME_FROM).join(RUNTIME_TO);
+
 /** Compensation target: the JSDoc directly above `function chromeFallbackFill()`. */
 const COMPENSATION_FN = "function chromeFallbackFill(";
 
@@ -467,8 +491,23 @@ function buildPatchedMain(oldBuf, options) {
   const delEndAbs = docStart + trimmed.boundary.delEnd;
 
   // --- assemble ---------------------------------------------------------
-  const newStr =
+  let newStr =
     s.slice(0, docStart) + trimmed.block + s.slice(docEnd, insertPos) + options + s.slice(insertPos);
+
+  // --- edits 2..3: neutralise the runtime overrides (equal length) -------
+  const runtimeEdits = [];
+  for (const site of RUNTIME_SITES) {
+    const hits = findAll(s, site);
+    eq(hits.length, 1, `occurrences of runtime site ${JSON.stringify(site.slice(0, 46))}`);
+    const at = hits[0];
+    // These sites sit after insertPos, so their offset is identical in newStr.
+    assert(at > insertPos, "runtime site unexpectedly sits before the insertion point");
+    const replacement = neutralizeRuntime(site);
+    eq(replacement.length, site.length, "runtime replacement length");
+    newStr = newStr.slice(0, at) + replacement + newStr.slice(at + site.length);
+    runtimeEdits.push({ at, length: site.length, replacement });
+  }
+
   const newBuf = Buffer.from(newStr, "latin1");
   eq(newBuf.length, oldBuf.length, "patched lib/main.js byte length (must be unchanged)");
   eq(countOccurrences(newStr, ANCHOR_INSERT_AFTER + options), 1, "inserted marker occurrences in lib/main.js");
@@ -484,6 +523,7 @@ function buildPatchedMain(oldBuf, options) {
       delEndAbs,
       insertPos,
       showOffset,
+      runtimeEdits,
       // The marker is `ANCHOR_INSERT_AFTER + options`, so in the patched text it
       // starts (terminator + options) bytes before the insertion point. Measured:
       // insertPos 790117, marker 790051 -> 66 = 9 + 57.
@@ -622,7 +662,7 @@ function writePatchedCopy(srcPath, tmpPath, dataStart, entry, newMain) {
  * insertPos, both inside lib/main.js.
  */
 function verifyPatched({ originalPath, patchedPath, edit }) {
-  const { options, n, delStartAbs, delEndAbs, insertPos, markerOffset } = edit;
+  const { options, n, delStartAbs, delEndAbs, insertPos, markerOffset, runtimeEdits } = edit;
   const optionBuf = Buffer.from(options, "latin1");
   eq(optionBuf.length, n, "declared options byte length");
   eq(delEndAbs - delStartAbs, n, "declared delete span length");
@@ -716,9 +756,20 @@ function verifyPatched({ originalPath, patchedPath, edit }) {
         mainO.subarray(insertPos),
       ]);
       eq(expected.length, mainO.length, "reconstructed lib/main.js length");
+      // The runtime sites are equal-length rewrites, so apply them to the
+      // reconstruction as well before comparing.
+      let rebuilt = expected;
+      for (const e of runtimeEdits) {
+        rebuilt = Buffer.concat([
+          rebuilt.subarray(0, e.at),
+          Buffer.from(e.replacement, "latin1"),
+          rebuilt.subarray(e.at + e.length),
+        ]);
+      }
+      eq(rebuilt.length, mainO.length, "rebuilt length after runtime edits");
       assert(
-        mainN.equals(expected),
-        "patched lib/main.js does not match the declared n-byte delete + n-byte insert",
+        mainN.equals(rebuilt),
+        "patched lib/main.js does not match the declared edits",
       );
       const cp = commonPrefix(mainO, mainN);
       const cs = commonSuffix(mainO, mainN);
@@ -1094,6 +1145,7 @@ function cmdEnable(args) {
         delEndAbs: pinfo.delEndAbs,
         insertPos: pinfo.insertPos,
         markerOffset: pinfo.markerOffset,
+        runtimeEdits: pinfo.runtimeEdits,
       },
     });
 

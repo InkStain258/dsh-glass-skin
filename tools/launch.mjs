@@ -29,6 +29,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
@@ -145,13 +146,65 @@ function readEntry(asar, segments) {
   }
 }
 
+/**
+ * The win32 runtime override that repaints the window opaque.
+ *
+ * Added in DSH 0.2.2: `enterWorkspace` calls this once after navigation, and the
+ * `nativeTheme` listener calls it on every theme change. A patch that only sets
+ * the constructor options is therefore invisible — acrylic is requested and then
+ * painted over. Presets from before 1.4.3 left this line untouched.
+ */
+const OUTDATED = 'if (process.platform === "win32") window.setBackgroundColor(chromeFallbackFill());'
+
+/** Current patch: acrylic requested AND the win32 runtime override neutralised. */
 function isPatched(asar) {
   try {
     const main = readEntry(asar, ['lib', 'main.js'])
-    return main ? main.includes(Buffer.from(MARKER)) : undefined
+    if (!main) return undefined
+    const text = main.toString('latin1')
+    return text.includes(MARKER) && !text.includes(OUTDATED)
   } catch {
     return undefined
   }
+}
+
+/** An older patch: acrylic present, but the runtime still repaints opaque. */
+function isOutdated(asar) {
+  try {
+    const main = readEntry(asar, ['lib', 'main.js'])
+    if (!main) return false
+    const text = main.toString('latin1')
+    return text.includes(MARKER) && text.includes(OUTDATED)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Put the pristine archive back so an outdated patch can be replaced.
+ *
+ * The backup is only trusted when its sha256 matches the sidecar's record of the
+ * pre-patch archive; anything else could be a leftover from a previous DSH build
+ * and restoring it would downgrade the app.
+ */
+function restoreFromBackup(asar) {
+  const backup = `${asar}.dsh-glass-backup`
+  const sidecar = `${asar}.dsh-glass.json`
+  if (!fs.existsSync(backup)) return 'no backup to restore from'
+  let recorded
+  try {
+    recorded = JSON.parse(fs.readFileSync(sidecar, 'utf8'))
+  } catch {
+    return 'no sidecar record to verify the backup against'
+  }
+  const actual = crypto.createHash('sha256').update(fs.readFileSync(backup)).digest('hex')
+  if (recorded.originalSha256 && actual !== recorded.originalSha256) {
+    return 'backup does not match the sidecar (it belongs to another build)'
+  }
+  const size = fs.statSync(backup).size
+  fs.copyFileSync(backup, asar)
+  if (fs.statSync(asar).size !== size) return 'restore changed the archive size'
+  return 'ok'
 }
 
 function findAsar() {
@@ -312,6 +365,22 @@ function main() {
       say(`  ${c.dim('Quit DeepSeek Harness, then run this again (or use the shortcut).')}`)
       return 2
     }
+
+    // A patch is present but predates the runtime neutralisation: the window is
+    // painted opaque after the constructor runs, so it must be rebuilt from the
+    // pristine archive rather than patched again over the top.
+    if (isOutdated(asar)) {
+      say(`${c.dim('an older patch is in place; restoring the archive first...')}`)
+      const restore = restoreFromBackup(asar)
+      if (restore !== 'ok') {
+        say(`${c.red('x')} cannot restore the pristine archive: ${restore}`)
+        say(`  ${c.dim('Run the installer once to rebuild the backup:')}`)
+        say(`  ${c.dim('npx --allow-git=all github:InkStain258/dsh-glass-skin')}`)
+        return 1
+      }
+      say(`${c.green('+')} pristine archive restored`)
+    }
+
     say(`${c.dim('applying the window patch...')}`)
     const result = spawnSync(process.execPath, [PATCHER, 'enable', '--asar', asar], {
       encoding: 'utf8',

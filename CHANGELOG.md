@@ -2,6 +2,44 @@
 
 Notable changes, newest first. Versions follow semver.
 
+## 1.4.3
+
+Fixes the window staying opaque on DSH 0.2.2. The 1.4.2 remedy was aimed at the
+wrong line.
+
+### Fixed
+
+- **A second, runtime override repaints the window opaque.** `createWindow`'s
+  options are only the initial value. On Windows, DSH 0.2.2 also calls
+  `window.setBackgroundColor(chromeFallbackFill())` twice afterwards:
+
+  - in `enterWorkspace`, once the main window finishes navigating;
+  - in an `updateBackground` listener on `nativeTheme` "updated", i.e. on every
+    theme change.
+
+  Both paint the opaque `#1b1b1c` / `#f9fafb` over the acrylic surface, so no
+  amount of tuning the constructor options could show through. They are now
+  rewritten in place to `#00000000`. The replacement is byte-length preserving
+  (the literal plus padding inside the parentheses), so no compensation edit and
+  no offset shift is involved.
+
+- **The launcher recognises an outdated patch.** It previously treated "the
+  acrylic marker is present" as done, which meant a pre-1.4.3 patch would never be
+  upgraded. `launch` now also requires that the win32 runtime override is gone;
+  when an older patch is found it restores the archive from the backup (verified
+  against the sidecar's sha256) and re-applies.
+
+### Verified
+
+On a byte-exact copy of the real 209 MB archive, starting from the pristine
+backup: all five patcher self-checks pass, exactly one entry differs
+(`lib/main.js`), `node --check` exits 0, size unchanged, the constructor options
+sit after the `chromeFallbackFill()` assignment (790060 > 789835), and both win32
+runtime overrides now set `#00000000`.
+
+The upgrade path was exercised end to end on a copy holding the old patch plus
+its backup: the launcher reported "an older patch is in place", restored the
+archive, re-applied, and left `win32 runtime opaque: false`, size unchanged.
 ## 1.4.2
 
 Fixes the window staying opaque on DSH 0.2.2 even though the patch was applied.
