@@ -2,6 +2,42 @@
 
 Notable changes, newest first. Versions follow semver.
 
+## 1.4.2
+
+Fixes the window staying opaque on DSH 0.2.2 even though the patch was applied.
+
+### Fixed
+
+- **The injected options were overwritten by the win32 primary branch.** Since
+  DSH 0.2.2, `createWindow` spreads `backgroundColor: chromeFallbackFill()` (an
+  opaque `#1b1b1c` / `#f9fafb`) for the main window on Windows. The options used
+  to be inserted right after `show,`, which sits *before* that spread — so
+  `backgroundMaterial:"acrylic"` was set and then had its transparent background
+  painted over. The source looked correct and `doctor` reported the patch as
+  applied, but the window rendered opaque.
+
+  The insertion point now follows the whole win32 branch, so our
+  `backgroundColor` is the last one in the object literal.
+
+- **The anchor had to become the whole win32 branch.** The trailing `} : {},`
+  appears four times in `lib/main.js`; matching it alone put the insertion
+  150 KB early, inside an unrelated object literal. The anchor is now the
+  complete win32 branch (275 bytes, one occurrence).
+
+### Notes
+
+- `markerOffset` in the self-check is now derived from the anchor plus the
+  inserted options rather than from a hand-counted constant; the previous
+  arithmetic was off by the terminator length and made the fifth self-check fail
+  on a correct patch.
+
+### Verified
+
+On a byte-exact copy of the real 209 MB archive: all five self-checks pass,
+exactly one entry differs (`lib/main.js`), `node --check` exits 0, size is
+unchanged, and the injected `backgroundColor:"#00000000"` now sits *after* the
+`chromeFallbackFill()` assignment (offset 790088 vs 789835).
+
 ## 1.4.1
 
 Fixes the launcher silently failing on DSH 0.2.2 and later.

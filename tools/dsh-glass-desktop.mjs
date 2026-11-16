@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * dsh-glass-desktop.mjs — patch the DeepSeek Harness Electron `app.asar` so its
+ * dsh-glass-desktop.mjs 鈥?patch the DeepSeek Harness Electron `app.asar` so its
  * MAIN window gets a native Windows glass backdrop (acrylic / mica).
  *
  *   node tools/dsh-glass-desktop.mjs status  [--asar <path>]
@@ -35,7 +35,7 @@
  *     sidecar and keeps the backup unless `--purge-backup` is given.
  *
  * NOTE: the live `E:\Github\DSH\resources\app.asar` is read lazily by the
- * running app — test on a copy first. This tool only writes when you run
+ * running app 鈥?test on a copy first. This tool only writes when you run
  * `enable`/`disable` against the path passed via `--asar`.
  */
 
@@ -73,10 +73,32 @@ const DEFAULT_ASAR = "E:\\Github\\DSH\\resources\\app.asar";
  */
 const DEFAULT_OPTIONS = 'backgroundColor:"#00000000",backgroundMaterial:"acrylic",';
 
-/** Unique anchor inside `lib/main.js` (exactly one occurrence, LF line endings). */
-const ANCHOR = '\t\tshow,\n\t\t...process.platform === "win32" && primary ? {';
-/** The `show,` property that ends ANCHOR's first line; options go right after it. */
-const ANCHOR_INSERT_AFTER = "show,";
+/**
+ * Unique anchor inside `lib/main.js` (exactly one occurrence, LF line endings).
+ *
+ * The options must land AFTER the platform branches, not after `show,`: since
+ * DSH 0.2.2 the win32 primary branch spreads `backgroundColor: chromeFallbackFill()`
+ * (an opaque `#1b1b1c` / `#f9fafb`), and a later spread wins. Injecting after
+ * `show,` therefore looked right in the source but painted an opaque window --
+ * acrylic was set and then covered.
+ *
+ * The anchor is the whole win32 branch, not just its trailing `} : {},`: that
+ * terminator alone occurs four times in this file, so matching it alone put the
+ * insertion 150 KB early, inside an unrelated object literal.
+ */
+const ANCHOR = [
+  '\t\t...process.platform === "win32" && primary ? {',
+  '\t\t\tbackgroundColor: chromeFallbackFill(),',
+  '\t\t\ttitleBarStyle: "hidden",',
+  '\t\t\ttitleBarOverlay: {',
+  '\t\t\t\theight: 40,',
+  '\t\t\t\tcolor: chromeFallbackFill(),',
+  '\t\t\t\tsymbolColor: nativeTheme.shouldUseDarkColors ? "#f9fafb" : "#0f1115"',
+  '\t\t\t}',
+  '\t\t} : {},',
+].join('\n');
+/** Options go immediately after the win32 branch closes. */
+const ANCHOR_INSERT_AFTER = '\t\t} : {},';
 
 /** Compensation target: the JSDoc directly above `function chromeFallbackFill()`. */
 const COMPENSATION_FN = "function chromeFallbackFill(";
@@ -204,7 +226,7 @@ function parseArgs(argv) {
 
 function usage() {
   console.log(`
-${C.bold("dsh-glass-desktop")} — native glass backdrop for the DSH main window (asar patcher)
+${C.bold("dsh-glass-desktop")} 鈥?native glass backdrop for the DSH main window (asar patcher)
 
 Usage:
   node tools/dsh-glass-desktop.mjs status  [--asar <path>]
@@ -244,7 +266,7 @@ trimmed away, so no entry offset changes and the asar header stays identical.
  * `headerStringSize > jsonLength`: DSH 0.2.2-rc.3 ships a 209 MB archive with
  * 7 padding bytes and the old formula landed 3 bytes early, which made every
  * entry read (and write) misaligned. `8 + pickleSize` is correct for both
- * layouts — when there is no padding it equals `16 + jsonLength`.
+ * layouts 鈥?when there is no padding it equals `16 + jsonLength`.
  */
 function readHeader(fd) {
   const pre = Buffer.alloc(16);
@@ -408,12 +430,17 @@ function buildPatchedMain(oldBuf, options) {
   const s = oldBuf.toString("latin1");
   const n = Buffer.byteLength(options, "latin1");
 
-  // --- edit 1: insertion point (right after `show,`) --------------------
+  // --- edit 1: insertion point (right after the win32 branch closes) -----
   const anchorHits = findAll(s, ANCHOR);
   eq(anchorHits.length, 1, "occurrences of the createWindow anchor");
-  const showOffset = anchorHits[0] + 2;
-  assert(s.startsWith(ANCHOR_INSERT_AFTER, showOffset), "anchor does not start with `show,`");
-  const insertPos = showOffset + ANCHOR_INSERT_AFTER.length;
+  const anchorStart = anchorHits[0];
+  // The anchor ENDS with the terminator; options go right after the anchor.
+  assert(
+    s.startsWith(ANCHOR_INSERT_AFTER, anchorStart + ANCHOR.length - ANCHOR_INSERT_AFTER.length),
+    "anchor does not end with the win32 branch terminator",
+  );
+  const showOffset = anchorStart;
+  const insertPos = anchorStart + ANCHOR.length;
 
   // --- edit 2: compensation (JSDoc above chromeFallbackFill) ------------
   const fnHits = findAll(s, COMPENSATION_FN);
@@ -444,7 +471,7 @@ function buildPatchedMain(oldBuf, options) {
     s.slice(0, docStart) + trimmed.block + s.slice(docEnd, insertPos) + options + s.slice(insertPos);
   const newBuf = Buffer.from(newStr, "latin1");
   eq(newBuf.length, oldBuf.length, "patched lib/main.js byte length (must be unchanged)");
-  eq(countOccurrences(newStr, "show," + options), 1, "inserted marker occurrences in lib/main.js");
+  eq(countOccurrences(newStr, ANCHOR_INSERT_AFTER + options), 1, "inserted marker occurrences in lib/main.js");
   assert(trimmed.block.slice(0, -2).indexOf("*/") === -1, "trimmed JSDoc body must not contain a new */");
 
   return {
@@ -457,7 +484,10 @@ function buildPatchedMain(oldBuf, options) {
       delEndAbs,
       insertPos,
       showOffset,
-      markerOffset: showOffset - n,
+      // The marker is `ANCHOR_INSERT_AFTER + options`, so in the patched text it
+      // starts (terminator + options) bytes before the insertion point. Measured:
+      // insertPos 790117, marker 790051 -> 66 = 9 + 57.
+      markerOffset: insertPos - (ANCHOR_INSERT_AFTER.length + n),
       beforeBlock: block,
       afterBlock: trimmed.block,
       boundary: trimmed.boundary,
@@ -604,8 +634,8 @@ function verifyPatched({ originalPath, patchedPath, edit }) {
       fn();
       log.ok(label);
     } catch (err) {
-      failures.push(`${label} — ${err.message}`);
-      log.fail(`${label} — ${err.message}`);
+      failures.push(`${label} 鈥?${err.message}`);
+      log.fail(`${label} 鈥?${err.message}`);
     }
   };
 
@@ -724,10 +754,15 @@ function verifyPatched({ originalPath, patchedPath, edit }) {
 
     // 5. marker exactly once ----------------------------------------------
     check("5/5 inserted marker appears exactly once, at the expected offset", () => {
-      const marker = Buffer.from("show," + options, "latin1");
+      // The marker is the anchor terminator followed by our options, so in the
+      // patched text it starts one `options` length before the insertion point.
+      // The marker is the terminator followed by the options. Rather than
+      // deriving its offset from arithmetic, locate it: `insertPos` is the
+      // options start, so the marker begins `ANCHOR_INSERT_AFTER.length` earlier.
+      const marker = Buffer.from(ANCHOR_INSERT_AFTER + options, "latin1");
       const hits = findAll(mainN, marker);
       eq(hits.length, 1, "marker occurrences in lib/main.js");
-      eq(hits[0], markerOffset, "marker offset");
+      eq(hits[0], markerOffset, `marker offset (insertPos ${insertPos}, marker ${hits[0]})`);
     });
 
     // extra: nothing outside lib/main.js changed, anywhere in the archive --
@@ -839,7 +874,7 @@ function inspectArchive(asar) {
     const candidates = [sidecar?.insertedOptions, DEFAULT_OPTIONS].filter(Boolean);
     let marker = null;
     for (const opt of candidates) {
-      const hits = findAll(s, "show," + opt);
+      const hits = findAll(s, ANCHOR_INSERT_AFTER + opt);
       if (hits.length === 1) {
         marker = { options: opt, offset: hits[0] };
         break;
@@ -901,10 +936,10 @@ function cmdStatus(args) {
     log.info(`              at lib/main.js +${info.marker.offset}`);
   }
   if (state === "unknown-marker") {
-    log.warn(`found ${info.backgroundMaterialCount} backgroundMaterial: occurrence(s) that do not match a known marker — run \`disable\` to restore`);
+    log.warn(`found ${info.backgroundMaterialCount} backgroundMaterial: occurrence(s) that do not match a known marker 鈥?run \`disable\` to restore`);
   }
   if (state === "unrecognized") {
-    log.warn("expected anchors were not found — this may be a different build");
+    log.warn("expected anchors were not found 鈥?this may be a different build");
   }
 
   const { backup, sidecar } = sidecarPaths(asar);
@@ -955,7 +990,7 @@ function cmdEnable(args) {
   if (info.marker) {
     if (info.marker.options === options) {
       log.head("already-enabled");
-      log.ok("the requested marker is already present — nothing to do");
+      log.ok("the requested marker is already present 鈥?nothing to do");
       log.info(`state         enabled (${info.marker.options})`);
       return;
     }
@@ -968,7 +1003,7 @@ function cmdEnable(args) {
   }
   if (info.backgroundMaterialCount > 0) {
     die(
-      `found ${info.backgroundMaterialCount} pre-existing backgroundMaterial: occurrence(s) — the archive is not in a pristine state; run \`disable\` first`,
+      `found ${info.backgroundMaterialCount} pre-existing backgroundMaterial: occurrence(s) 鈥?the archive is not in a pristine state; run \`disable\` first`,
     );
   }
   assert(info.anchorCount === 1, `the anchor must occur exactly once in ${MAIN_JS} (found ${info.anchorCount})`);
@@ -1017,18 +1052,18 @@ function cmdEnable(args) {
     log.ok(`backup        ${backup}`);
     log.ok(`sidecar       ${sidecar}`);
   } else {
-    log.step("backup already exists — reusing it (never overwritten)");
+    log.step("backup already exists 鈥?reusing it (never overwritten)");
     log.info(`backup        ${backup}`);
     const sc = info.sidecar;
-    assert(sc, "a backup exists but its sidecar is missing — refusing to guess the original sha256");
+    assert(sc, "a backup exists but its sidecar is missing 鈥?refusing to guess the original sha256");
     eq(sha256File(backup), sc.originalSha256, "existing backup sha256 vs sidecar");
     log.ok("existing backup matches the sidecar sha256");
   }
 
   log.plain("");
-  log.plain(C.dim("  JSDoc above chromeFallbackFill() — before:"));
+  log.plain(C.dim("  JSDoc above chromeFallbackFill() 鈥?before:"));
   for (const line of pinfo.beforeBlock.split("\n")) log.plain(`    ${line}`);
-  log.plain(C.dim("  JSDoc above chromeFallbackFill() — after:"));
+  log.plain(C.dim("  JSDoc above chromeFallbackFill() 鈥?after:"));
   for (const line of pinfo.afterBlock.split("\n")) log.plain(`    ${line}`);
   if (pinfo.boundary) {
     log.info(`deleted span  lib/main.js +${pinfo.delStartAbs}..+${pinfo.delEndAbs} (${bytes(pinfo.boundary.delEnd - pinfo.boundary.delStart)})`);
@@ -1077,7 +1112,7 @@ function cmdEnable(args) {
             `  Your current archive is untouched and still matches the backup.\n` +
             `  A fully verified patched copy has been kept at:\n    ${tmp}\n` +
             `  Quit DeepSeek Harness completely (tray icon included), then run\n` +
-            `  \`enable\` again — or move that file over the archive yourself.`,
+            `  \`enable\` again 鈥?or move that file over the archive yourself.`,
         );
       }
       throw err;
@@ -1110,7 +1145,7 @@ function cmdEnable(args) {
   log.info(` bytes between them shift by N; the edit script is still 1 delete + 1 insert of N)`);
   log.info(`payload entries hashed ${report.payloadEntries.toLocaleString("en-US")} (all but lib/main.js identical)`);
 
-  log.head("done — enable");
+  log.head("done 鈥?enable");
   log.ok(`state         enabled`);
   log.info(`options       ${options}`);
   log.info(`sha256        ${sha256File(asar)}`);
@@ -1128,10 +1163,10 @@ function cmdDisable(args) {
   const { backup, sidecar } = sidecarPaths(asar);
   assert(
     fs.existsSync(backup),
-    `no backup found at ${backup} — cannot restore.\n    Without a backup the original archive must be restored by reinstalling DSH.`,
+    `no backup found at ${backup} 鈥?cannot restore.\n    Without a backup the original archive must be restored by reinstalling DSH.`,
   );
   const sc = readSidecar(asar);
-  assert(sc, `sidecar ${sidecar} is missing — cannot verify the backup sha256`);
+  assert(sc, `sidecar ${sidecar} is missing 鈥?cannot verify the backup sha256`);
 
   log.step("verifying the backup against the sidecar");
   log.info(`expected  ${sc.originalSha256}`);
@@ -1143,7 +1178,7 @@ function cmdDisable(args) {
   const currentSha = sha256File(asar);
   if (currentSha === sc.originalSha256) {
     log.head("already-disabled");
-    log.ok("the archive already equals the original backup — nothing to do");
+    log.ok("the archive already equals the original backup 鈥?nothing to do");
     if (args.purgeBackup) {
       fs.rmSync(backup, { force: true });
       fs.rmSync(sidecar, { force: true });
@@ -1187,7 +1222,7 @@ function cmdDisable(args) {
   eq(info.size, Number(sc.originalSize), "restored archive size");
   assert(!info.marker, "the restored archive still contains the marker");
 
-  log.head("done — disable");
+  log.head("done 鈥?disable");
   log.ok("state         disabled (pristine bytes restored)");
   log.info(`sha256        ${sc.originalSha256}`);
   log.info(`size          ${bytes(info.size)}`);
