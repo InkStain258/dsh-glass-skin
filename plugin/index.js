@@ -70,6 +70,7 @@ function readEntry(asar, segments) {
   try {
     const head = Buffer.alloc(16)
     if (fsi.readSync(fd, head, 0, 16, 0) < 16) return undefined
+    const pickleSize = head.readUInt32LE(4)
     const jsonLength = head.readUInt32LE(12)
     if (jsonLength === 0 || jsonLength > 64 * 1024 * 1024) return undefined
     const jsonBuf = Buffer.alloc(jsonLength)
@@ -84,7 +85,9 @@ function readEntry(asar, segments) {
       node = node?.files?.[segment]
       if (!node) return undefined
     }
-    const start = 16 + jsonLength + Number(node.offset)
+    // 数据区起点 = 8 + pickleSize（header 字符串按 4 字节补齐，
+    // 16 + jsonLength 在有填充时会错位，导致误报「补丁缺失」）。
+    const start = 8 + pickleSize + Number(node.offset)
     const out = Buffer.alloc(node.size)
     if (fsi.readSync(fd, out, 0, node.size, start) < node.size) return undefined
     return out

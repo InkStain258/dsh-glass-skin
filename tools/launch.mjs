@@ -54,6 +54,63 @@ const c = {
 const say = (s = '') => console.log(s)
 
 /* ------------------------------------------------------------------ */
+/* output: console + persistent log + visible failure                  */
+/* ------------------------------------------------------------------ */
+
+const LOG_FILE = path.join(
+  process.env.LOCALAPPDATA ?? os.homedir(),
+  'dsh-glass-skin',
+  'launch.log',
+)
+const transcript = []
+const rawLog = console.log.bind(console)
+console.log = (...parts) => {
+  const line = parts.join(' ')
+  transcript.push(line)
+  rawLog(line)
+  try {
+    fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true })
+    try {
+      if (fs.statSync(LOG_FILE).size > 128 * 1024) fs.writeFileSync(LOG_FILE, '', 'utf8')
+    } catch {
+      /* first write */
+    }
+    fs.appendFileSync(LOG_FILE, `${line.replace(/\x1b\[[0-9;]*m/gu, '')}\n`, 'utf8')
+  } catch {
+    /* logging is best effort */
+  }
+}
+
+/**
+ * Report a failure where the user can actually see it.
+ *
+ * The Desktop shortcut runs this with a hidden window, so a non-zero exit is
+ * completely silent — that is exactly how "the shortcut stopped working" looked
+ * before. When there is no console, show a native message box with the tail of
+ * the transcript.
+ */
+function notifyFailure(code) {
+  if (process.stdout.isTTY) return
+  // Tests and scripted runs set this so a modal box does not block them.
+  if (process.env.DSH_GLASS_NO_POPUP === '1') return
+  const tail = transcript.slice(-10).join('\n').slice(0, 900)
+  const text = `Glass skin could not be applied (exit ${code}).\n\nLog: ${LOG_FILE}\n\n${tail}`
+  const vbs = path.join(os.tmpdir(), `dsh-glass-msg-${process.pid}.vbs`)
+  const esc = (s) => s.replace(/"/gu, '""')
+  try {
+    const body = `MsgBox "${esc(text)}", 16, "dsh-glass-skin"\r\n`
+    // wscript honours a UTF-16LE BOM, which keeps non-ASCII paths readable.
+    fs.writeFileSync(vbs, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(body, 'utf16le')]))
+    // Detached: a MsgBox is modal, so waiting on it would hang this process
+    // (and whatever launched it) until the user clicks OK.
+    const child = spawn('wscript.exe', [vbs], { detached: true, stdio: 'ignore' })
+    child.unref()
+  } catch {
+    /* never swallow the original failure because the popup failed */
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* archive                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -62,6 +119,7 @@ function readEntry(asar, segments) {
   try {
     const head = Buffer.alloc(16)
     if (fs.readSync(fd, head, 0, 16, 0) < 16) return undefined
+    const pickleSize = head.readUInt32LE(4)
     const jsonLength = head.readUInt32LE(12)
     if (jsonLength === 0 || jsonLength > 64 * 1024 * 1024) return undefined
     const jsonBuf = Buffer.alloc(jsonLength)
@@ -76,7 +134,9 @@ function readEntry(asar, segments) {
       node = node?.files?.[segment]
       if (!node) return undefined
     }
-    const start = 16 + jsonLength + Number(node.offset)
+    // 数据区起点 = 8 + pickleSize。header 字符串按 4 字节对齐补齐，
+    // 所以 16 + jsonLength 在有填充时会错位（DSH 0.2.2 起就带了 7 字节填充）。
+    const start = 8 + pickleSize + Number(node.offset)
     const out = Buffer.alloc(node.size)
     if (fs.readSync(fd, out, 0, node.size, start) < node.size) return undefined
     return out
@@ -112,7 +172,7 @@ function findAsar() {
     '-NoProfile',
     '-Command',
     "Get-CimInstance Win32_Process | Where-Object { $_.Name -like 'DeepSeek Harness*' } | ForEach-Object { $_.CommandLine }",
-  ], { encoding: 'utf8' })
+  ], { encoding: 'utf8', timeout: 8000 })
   if (lister.status === 0 && typeof lister.stdout === 'string') {
     for (const line of lister.stdout.split(/\r?\n/u)) {
       const m = line.match(/([A-Za-z]:\\[^\s"']*?\\app\.asar)/u)
@@ -287,4 +347,6 @@ function main() {
   return 0
 }
 
-process.exitCode = main()
+const exitCode = main()
+if (exitCode !== 0) notifyFailure(exitCode)
+process.exitCode = exitCode

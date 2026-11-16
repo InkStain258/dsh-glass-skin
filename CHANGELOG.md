@@ -2,6 +2,20 @@
 
 Notable changes, newest first. Versions follow semver.
 
+## 1.4.1
+
+Fixes the launcher silently failing on DSH 0.2.2 and later.
+
+### Fixed
+
+- **`dataStart` was computed as `16 + jsonLength`.** DSH 0.2.2-rc.3 ships a 209 MB archive whose header string is padded to a 4-byte boundary (7 padding bytes), so that formula landed 3 bytes early. Every entry read — and every write — was misaligned, which made the patcher's own `node --check` gate fail, so the patch was refused and the launcher exited without starting the app. The correct formula is `8 + pickleSize`; it equals the old one when there is no padding, so both layouts work. Fixed in `tools/dsh-glass-desktop.mjs`, `tools/launch.mjs` and `plugin/index.js` — the latter two only *read* the archive, and were mis-reporting the patch as missing.
+- **Launcher failures were invisible.** The Desktop shortcut runs it with a hidden window, so any non-zero exit looked like "nothing happened". It now writes `%LOCALAPPDATA%\dsh-glass-skin\launch.log` and, when there is no console, shows a native message box with the last lines of the transcript.
+- The process probe in `findAsar()` now carries an 8 s timeout; an unbounded PowerShell call could stall the launcher.
+
+### Verified
+
+Against a byte-exact copy of the real 209 MB archive: the patcher's five self-checks all pass, an independent re-read shows exactly one entry differs (`lib/main.js`), the acrylic marker appears exactly once, `node --check` on the patched entry exits 0, and the archive size is unchanged. Runtime confirmation (the window actually blurring) still requires relaunching the app.
+
 ## 1.4.0
 
 Replaces the self-repair machinery with a launcher. The previous release tried to

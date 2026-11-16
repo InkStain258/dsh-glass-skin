@@ -235,8 +235,16 @@ trimmed away, so no entry offset changes and the asar header stays identical.
 
 /**
  * Read + parse the asar header.
- * Layout: u32@0 = 4, u32@4 = header pickle size, u32@8 = headerStringSize,
- * u32@12 = jsonLength; JSON starts at 16; data begins at 16 + jsonLength.
+ *
+ * Layout: u32@0 = 4, u32@4 = pickle size, u32@8 = headerStringSize,
+ * u32@12 = jsonLength, JSON at 16.
+ *
+ * Data begins at `8 + pickleSize`, NOT `16 + jsonLength`. The header string is
+ * padded to a 4-byte boundary, so those two differ whenever
+ * `headerStringSize > jsonLength`: DSH 0.2.2-rc.3 ships a 209 MB archive with
+ * 7 padding bytes and the old formula landed 3 bytes early, which made every
+ * entry read (and write) misaligned. `8 + pickleSize` is correct for both
+ * layouts — when there is no padding it equals `16 + jsonLength`.
  */
 function readHeader(fd) {
   const pre = Buffer.alloc(16);
@@ -254,6 +262,17 @@ function readHeader(fd) {
   const jsonRaw = Buffer.alloc(jsonLength);
   const got = fs.readSync(fd, jsonRaw, 0, jsonLength, 16);
   assert(got === jsonLength, `short header read: ${got}/${jsonLength}`);
+  // The string is padded to 4 bytes; the pickle holds it plus its own length word.
+  const dataStart = 8 + pickleSize;
+  const padding = dataStart - (16 + jsonLength);
+  assert(
+    padding >= 0 && padding < 8,
+    `implausible header padding ${padding} (pickleSize ${pickleSize}, jsonLength ${jsonLength})`,
+  );
+  assert(
+    headerStringSize >= jsonLength,
+    `headerStringSize ${headerStringSize} < jsonLength ${jsonLength}`,
+  );
   let json;
   try {
     json = JSON.parse(jsonRaw.toString("utf8"));
@@ -268,7 +287,7 @@ function readHeader(fd) {
     jsonLength,
     jsonRaw,
     json,
-    dataStart: 16 + jsonLength,
+    dataStart,
   };
 }
 
